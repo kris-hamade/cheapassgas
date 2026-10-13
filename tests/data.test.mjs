@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseAAA,parseEIA,forecast,model,today} from '../server/data.mjs';
+import {parseAAA,parseEIA,forecast,model,today,cached} from '../server/data.mjs';
 const date=(i)=>new Date(Date.UTC(2024,0,1)+i*7*86400000).toISOString().slice(0,10);
 const h={points:Array.from({length:100},(_,i)=>({date:date(i),value:3+.05*Math.sin(i*.5)+i*.002})),description:'Test history',scope:'city'};
 const empty={markets:[],news:null};
@@ -8,4 +8,5 @@ test('AAA parser preserves real observation dates and distinct metro snapshots',
 test('Missing or changed upstream markup fails instead of producing made-up prices',()=>{assert.throws(()=>parseAAA('<p>Access denied</p>','NY'));assert.throws(()=>parseEIA('<p>Unavailable</p>'));});
 test('Daily scenario paths are ordered, start from the observed price, and span 14 future days',()=>{let price={current:3.5,week:3.49,month:3.45,yesterday:3.499,date:today()};let result=forecast(price,h,empty);assert.equal(result.points.length,15);assert.equal(result.points[0].average,price.current);assert.equal(result.points[0].positive,price.current);for(let p of result.points){assert.ok(Number.isFinite(p.average));assert.ok(p.positive<=p.average);assert.ok(p.average<=p.negative);assert.ok(p.positive>0);}assert.equal((new Date(result.points[14].date)-new Date(result.points[0].date))/86400000,14);});
 test('Old or missing price data suppresses forecasts',()=>{assert.equal(forecast({current:3,date:'2020-01-01'},h,empty),null);assert.equal(forecast(null,h,empty),null);});
+test('A restricted hosted cache still retrieves real source data',async()=>{let previous=globalThis.caches;globalThis.caches={open:async()=>{throw Error('Cache is restricted');}};try{let value=await cached('test',60,{},async()=>({current:4.53,date:'2026-10-12',source:'AAA'}));assert.equal(value.current,4.53);assert.equal(value.source,'AAA');}finally{globalThis.caches=previous;}});
 test('Validation uses earlier observations only: changing the final target does not change earlier hold-out predictions',()=>{let a=model(h,[]),changed={...h,points:h.points.map((p,i)=>i===h.points.length-1?{...p,value:p.value+1}:p)},b=model(changed,[]);assert.ok(a.trained);assert.equal(a.holdout,16);assert.deepEqual(a.residuals.slice(0,-1),b.residuals.slice(0,-1));assert.ok(Math.abs(b.residuals.at(-1)-a.residuals.at(-1)-1)<1e-9);});

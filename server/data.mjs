@@ -30,7 +30,15 @@ export function parseEIA(html){
  if(points.length<24)throw Error('EIA history could not be parsed');return points.sort((a,b)=>a.date.localeCompare(b.date)).filter(p=>p.date<=today()).slice(-160);
 }
 async function boundedText(response,max=3000000){if(!response.ok)throw Error(`Source returned HTTP ${response.status}`);let reader=response.body.getReader(),parts=[],length=0;while(true){let {done,value}=await reader.read();if(done)break;length+=value.length;if(length>max){await reader.cancel();throw Error('Source exceeded size limit');}parts.push(value);}let out=new Uint8Array(length),offset=0;for(let p of parts){out.set(p,offset);offset+=p.length;}return new TextDecoder().decode(out);}
-export async function cached(key,ttl,ctx,loader){const cache=globalThis.caches?.default;const cacheKey=new Request('https://cheapassgas-city-fuel-outlook.khamade22.chatgpt.site/__data/v3/'+encodeURIComponent(key));if(cache){let hit=await cache.match(cacheKey);if(hit)return hit.json();}let data=await loader();if(cache){let task=cache.put(cacheKey,new Response(JSON.stringify(data),{headers:{'content-type':'application/json','cache-control':`public,max-age=${ttl}`}}));if(ctx?.waitUntil)ctx.waitUntil(task);else await task;}return data;}
+export async function cached(key,ttl,ctx,loader){
+ let cache;try{if(globalThis.caches?.open)cache=await globalThis.caches.open('cheapassgas-data-v3');else cache=globalThis.caches?.default;}catch{cache=null;}
+ const cacheKey=new Request('https://cheapassgas-city-fuel-outlook.khamade22.chatgpt.site/__data/v3/'+encodeURIComponent(key));
+ if(cache){try{let hit=await cache.match(cacheKey);if(hit)return await hit.json();}catch{cache=null;}}
+ const data=await loader();
+ if(cache){let task=cache.put(cacheKey,new Response(JSON.stringify(data),{headers:{'content-type':'application/json','cache-control':'public,max-age='+ttl}})).catch(()=>undefined);if(ctx?.waitUntil)ctx.waitUntil(task);else await task;}
+ return data;
+}
+
 async function text(url){return boundedText(await fetch(url,{headers:{'User-Agent':'CheapAssGas/2.0 (+https://cheapassgas-city-fuel-outlook.khamade22.chatgpt.site)'},signal:AbortSignal.timeout(15000)}));}
 export const statePrices=(state,ctx)=>cached('aaa-'+state,21600,ctx,async()=>({...parseAAA(await text('https://gasprices.aaa.com/?state='+state),state),retrievedAt:new Date().toISOString()}));
 function region(state){if(state==='US')return'NUS';if(['CA'].includes(state))return'SCA';if(['NY'].includes(state))return'SNY';if(['CT','ME','MA','NH','RI','VT'].includes(state))return'R1X';if(['DE','DC','MD','NJ','PA'].includes(state))return'R1Y';if(['FL','GA','NC','SC','VA','WV'].includes(state))return'R1Z';if(['AL','AR','LA','MS','NM','TX'].includes(state))return'R30';if(['CO','ID','MT','UT','WY'].includes(state))return'R40';if(['AK','AZ','HI','NV','OR','WA'].includes(state))return'R50';return'R20';}
