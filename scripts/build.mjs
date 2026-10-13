@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+const root=path.resolve(import.meta.dirname,'..');
+const data=fs.readFileSync(path.join(root,'server/data.mjs'),'utf8');
+const html=fs.readFileSync(path.join(root,'web/index.html'),'utf8');
+const client=fs.readFileSync(path.join(root,'app.js'),'utf8');
+let worker=fs.readFileSync(path.join(root,'server/worker.mjs'),'utf8').replace(/^import .*from '\.\/data\.mjs';\r?\n/,'');
+worker=worker.replace('__PAGE__',()=>JSON.stringify(html)).replace('__SCRIPT__',()=>JSON.stringify(client));
+const config=JSON.parse(fs.readFileSync(path.join(root,'.openai/hosting.json'),'utf8'));
+if(config.static)throw Error('Remove static configuration before building the Worker.');
+fs.mkdirSync(path.join(root,'dist/server'),{recursive:true});
+fs.mkdirSync(path.join(root,'dist/.openai'),{recursive:true});
+const oldPage=path.join(root,'dist/index.html');if(fs.existsSync(oldPage))fs.unlinkSync(oldPage);
+fs.writeFileSync(path.join(root,'dist/server/index.js'),data+'\n'+worker);
+fs.writeFileSync(path.join(root,'dist/.openai/hosting.json'),JSON.stringify(config,null,2)+'\n');
+console.log('Built embedded frontend and data Worker → dist/server/index.js');
